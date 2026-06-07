@@ -1,0 +1,93 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.sessions-mcp-view {
+	height: 100%;
+}
+
+.sessions-mcp-view .tree-container {
+	height: 100%;
+}
+
+/* Tree item base */
+.sessions-mcp-view .sessions-mcp-tree-item {
+	display: flex;
+	align-items: center;
+	height: 22px;
+	line-height: 22px;
+	padding-right: 8px;
+}
+
+.sessions-mcp-view .sessions-mcp-tree-item .icon {
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	margin-right: 6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.sessions-mcp-view .sessions-mcp-tree-item .name {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sessions-mcp-view .sessions-mcp-tree-item .description {
+	flex-shrink: 1;
+	color: var(--vscode-descriptionForeground);
+	font-size: 0.9em;
+	margin-left: 8px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	opacity: 0.8;
+}
+
+.sessions-mcp-view .sessions-mcp-tree-item .actions {
+	display: none;
+	flex-shrink: 0;
+	max-width: fit-content;
+}
+
+.sessions-mcp-view .monaco-list .monaco-list-row:hover .sessions-mcp-tree-item > .actions,
+.sessions-mcp-view .monaco-list .monaco-list-row.focused .sessions-mcp-tree-item > .actions,
+.sessions-mcp-view .monaco-list .monaco-list-row.selected .sessions-mcp-tree-item > .actions {
+	display: flex;
+}
+
+/* Status dot to the left of server name */
+.sessions-mcp-view .sessions-mcp-tree-item .status-dot {
+	flex-shrink: 0;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	margin-right: 6px;
+	background-color: var(--vscode-descriptionForeground);
+}
+
+.sessions-mcp-view .sessions-mcp-tree-item .status-dot.running {
+	background-color: var(--vscode-debugIcon-startForeground, #388a34);
+}
+
+.sessions-mcp-view .sessions-mcp-tree-item .status-dot.starting {
+	background-color: var(--vscode-debugIcon-pauseForeground, #cca700);
+}
+
+.sessions-mcp-view .sessions-mcp-tree-item .status-dot.error {
+	background-color: var(--vscode-errorForeground, #f48771);
+}
+
+.sessions-mcp-view .sessions-mcp-tree-item .status-dot.stopped {
+	background-color: var(--vscode-descriptionForeground);
+	opacity: 0.6;
+}
+
+.sessions-mcp-view .sessions-mcp-tree-item.disabled .name {
+	opacity: 0.6;
+	font-style: italic;
+}
