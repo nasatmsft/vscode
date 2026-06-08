@@ -6,7 +6,7 @@
 import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { localize, localize2 } from '../../../../nls.js';
-import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, ISubmenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
@@ -23,8 +23,8 @@ import { ContributionEnablementState } from '../../../../workbench/contrib/chat/
 import { IMcpService, McpConnectionState } from '../../../../workbench/contrib/mcp/common/mcpTypes.js';
 import { IsPhoneLayoutContext } from '../../../common/contextkeys.js';
 import { ISessionsMcpUserIntentService } from '../common/mcpUserIntentService.js';
-import { SESSIONS_MCP_CATEGORY, SESSIONS_MCP_CONTAINER_ID, SESSIONS_MCP_VIEW_ID, SessionsMcpServerItemMenuId } from './mcpTreeView.js';
-import { SessionsMcpServerEnabledContextKey, SessionsMcpServerStateContextKey, SessionsMcpViewPane } from './mcpTreeViewPane.js';
+import { SESSIONS_MCP_CATEGORY, SESSIONS_MCP_CONTAINER_ID, SESSIONS_MCP_VIEW_ID, SessionsMcpGroupByMenuId, SessionsMcpServerItemMenuId, SessionsMcpToolItemMenuId, SessionsMcpTreeContextMenuId } from './mcpTreeView.js';
+import { SessionsMcpGroupBy, SessionsMcpGroupByContextKey, SessionsMcpServerEnabledContextKey, SessionsMcpServerStateContextKey, SessionsMcpViewPane } from './mcpTreeViewPane.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
 
 const mcpViewIcon = registerIcon('sessions-mcp-view-icon', Codicon.server, localize2('sessionsMcpViewIcon', 'View icon for the MCP Servers view in the Agents Window.').value);
@@ -74,6 +74,12 @@ function extractServerId(context: ServerContext): string | undefined {
 		return context;
 	}
 	return context.serverId;
+}
+
+async function setGroupBy(accessor: ServicesAccessor, groupBy: SessionsMcpGroupBy): Promise<void> {
+	const viewsService = accessor.get(IViewsService);
+	const view = viewsService.getViewWithId(SESSIONS_MCP_VIEW_ID) ?? await viewsService.openView(SESSIONS_MCP_VIEW_ID, false);
+	(view as SessionsMcpViewPane | undefined)?.setGroupBy(groupBy);
 }
 
 //#endregion
@@ -138,6 +144,127 @@ registerAction2(class extends Action2 {
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		await accessor.get(ICommandService).executeCommand(McpCommandIds.Browse);
+	}
+});
+
+MenuRegistry.appendMenuItem(MenuId.ViewTitleContext, {
+	submenu: SessionsMcpGroupByMenuId,
+	title: localize('groupMcpServersBy', "Group By"),
+	group: '2_group',
+	order: 1,
+	when: ContextKeyExpr.equals('view', SESSIONS_MCP_VIEW_ID),
+} satisfies ISubmenuItem);
+
+MenuRegistry.appendMenuItem(MenuId.ViewContainerTitleContext, {
+	submenu: SessionsMcpGroupByMenuId,
+	title: localize('groupMcpServersBy', "Group By"),
+	group: '2_composite',
+	order: 0,
+	when: ContextKeyExpr.equals('viewContainer', SESSIONS_MCP_CONTAINER_ID),
+} satisfies ISubmenuItem);
+
+MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
+	submenu: SessionsMcpGroupByMenuId,
+	title: localize('groupMcpServersBy', "Group By"),
+	group: '2_group',
+	order: 1,
+	when: ContextKeyExpr.equals('view', SESSIONS_MCP_VIEW_ID),
+} satisfies ISubmenuItem);
+
+MenuRegistry.appendMenuItem(SessionsMcpTreeContextMenuId, {
+	submenu: SessionsMcpGroupByMenuId,
+	title: localize('groupMcpServersBy', "Group By"),
+	group: '1_group',
+	order: 1,
+} satisfies ISubmenuItem);
+
+MenuRegistry.appendMenuItem(SessionsMcpServerItemMenuId, {
+	submenu: SessionsMcpGroupByMenuId,
+	title: localize('groupMcpServersBy', "Group By"),
+	group: '4_group',
+	order: 1,
+} satisfies ISubmenuItem);
+
+MenuRegistry.appendMenuItem(SessionsMcpToolItemMenuId, {
+	submenu: SessionsMcpGroupByMenuId,
+	title: localize('groupMcpServersBy', "Group By"),
+	group: '1_group',
+	order: 1,
+} satisfies ISubmenuItem);
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'sessions.mcp.groupByNone',
+			title: localize2('groupMcpServersByNone', "None"),
+			toggled: ContextKeyExpr.equals(SessionsMcpGroupByContextKey.key, SessionsMcpGroupBy.None),
+			menu: {
+				id: SessionsMcpGroupByMenuId,
+				group: 'navigation',
+				order: 1,
+			},
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		await setGroupBy(accessor, SessionsMcpGroupBy.None);
+	}
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'sessions.mcp.groupByBuiltIn',
+			title: localize2('groupMcpServersByBuiltIn', "Built In"),
+			toggled: ContextKeyExpr.equals(SessionsMcpGroupByContextKey.key, SessionsMcpGroupBy.BuiltIn),
+			menu: {
+				id: SessionsMcpGroupByMenuId,
+				group: 'navigation',
+				order: 2,
+			},
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		await setGroupBy(accessor, SessionsMcpGroupBy.BuiltIn);
+	}
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'sessions.mcp.groupByState',
+			title: localize2('groupMcpServersByState', "State"),
+			toggled: ContextKeyExpr.equals(SessionsMcpGroupByContextKey.key, SessionsMcpGroupBy.State),
+			menu: {
+				id: SessionsMcpGroupByMenuId,
+				group: 'navigation',
+				order: 3,
+			},
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		await setGroupBy(accessor, SessionsMcpGroupBy.State);
+	}
+});
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'sessions.mcp.groupByType',
+			title: localize2('groupMcpServersByType', "Type"),
+			toggled: ContextKeyExpr.equals(SessionsMcpGroupByContextKey.key, SessionsMcpGroupBy.Type),
+			menu: {
+				id: SessionsMcpGroupByMenuId,
+				group: 'navigation',
+				order: 4,
+			},
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		await setGroupBy(accessor, SessionsMcpGroupBy.Type);
 	}
 });
 

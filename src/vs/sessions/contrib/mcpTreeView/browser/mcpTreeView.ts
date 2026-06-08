@@ -22,6 +22,16 @@ export const SESSIONS_MCP_VIEW_ID = 'sessions.mcpServersView';
 export const SESSIONS_MCP_CATEGORY = localize2('sessionsMcp', "MCP Servers");
 
 /**
+ * Menu id for MCP server grouping choices.
+ */
+export const SessionsMcpGroupByMenuId = new MenuId('sessions.mcpServers.groupBy');
+
+/**
+ * Context menu id for the MCP servers tree itself.
+ */
+export const SessionsMcpTreeContextMenuId = new MenuId('sessions.mcpServers.treeContext');
+
+/**
  * Context menu id for individual MCP server tree items.
  */
 export const SessionsMcpServerItemMenuId = new MenuId('sessions.mcpServers.serverItem');

@@ -48,6 +48,10 @@
 	opacity: 0.8;
 }
 
+.sessions-mcp-view .sessions-mcp-tree-item.group .name {
+	font-weight: 600;
+}
+
 .sessions-mcp-view .sessions-mcp-tree-item .actions {
 	display: none;
 	flex-shrink: 0;

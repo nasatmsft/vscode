@@ -5,6 +5,8 @@
 
 import { localize } from '../../../nls.js';
 import { ActionsOrientation } from '../../../base/browser/ui/actionbar/actionbar.js';
+import { getContextMenuActions } from '../../../platform/actions/browser/menuEntryActionViewItem.js';
+import { IMenuService, MenuId } from '../../../platform/actions/common/actions.js';
 import { IActivityService } from '../../services/activity/common/activity.js';
 import { IWorkbenchLayoutService, Parts } from '../../services/layout/browser/layoutService.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
@@ -18,7 +20,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../platform/
 import { IExtensionService } from '../../services/extensions/common/extensions.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
 import { ToggleCompositePinnedAction, ICompositeBarColors, IActivityHoverOptions, ToggleCompositeBadgeAction, CompositeBarAction, ICompositeBar, ICompositeBarActionItem } from './compositeBarActions.js';
-import { IViewDescriptorService, ViewContainer, IViewContainerModel, ViewContainerLocation } from '../../common/views.js';
+import { IViewDescriptorService, ViewContainer, IViewContainerModel, ViewContainerLocation, ViewContainerLocationToString } from '../../common/views.js';
 import { IContextKeyService, ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
 import { isString } from '../../../base/common/types.js';
 import { IWorkbenchEnvironmentService } from '../../services/environment/common/environmentService.js';
@@ -108,6 +110,7 @@ export class PaneCompositeBar extends Disposable {
 		@IContextKeyService protected readonly contextKeyService: IContextKeyService,
 		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
 		@IWorkbenchLayoutService protected readonly layoutService: IWorkbenchLayoutService,
+		@IMenuService private readonly compositeMenuService: IMenuService,
 	) {
 		super();
 
@@ -160,6 +163,14 @@ export class PaneCompositeBar extends Disposable {
 		const viewContainer = this.viewDescriptorService.getViewContainerById(compositeId)!;
 		const defaultLocation = this.viewDescriptorService.getDefaultViewContainerLocation(viewContainer)!;
 		const currentLocation = this.viewDescriptorService.getViewContainerLocation(viewContainer);
+		if (currentLocation !== null) {
+			const contextMenuActions = this.compositeMenuService.getMenuActions(MenuId.ViewContainerTitleContext, this.contextKeyService.createOverlay([
+				['viewContainer', viewContainer.id],
+				['viewContainerLocation', ViewContainerLocationToString(currentLocation)],
+			]), { shouldForwardArgs: true, renderShortTitle: true }).filter(([group]) => group === '2_composite');
+			const { secondary } = getContextMenuActions(contextMenuActions);
+			actions.push(...secondary);
+		}
 
 		// Move View Container
 		const moveActions = [];

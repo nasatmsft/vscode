@@ -25,18 +25,20 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { WorkbenchAsyncDataTree } from '../../../../platform/list/browser/listService.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IViewPaneOptions, ViewPane } from '../../../../workbench/browser/parts/views/viewPane.js';
 import { IViewDescriptorService } from '../../../../workbench/common/views.js';
 import { ContributionEnablementState, isContributionEnabled } from '../../../../workbench/contrib/chat/common/enablement.js';
-import { IMcpServer, IMcpService, IMcpTool, McpConnectionState } from '../../../../workbench/contrib/mcp/common/mcpTypes.js';
-import { SessionsMcpServerItemMenuId, SessionsMcpToolItemMenuId } from './mcpTreeView.js';
+import { IMcpServer, IMcpService, IMcpTool, McpConnectionState, McpServerTransportType } from '../../../../workbench/contrib/mcp/common/mcpTypes.js';
+import { SessionsMcpServerItemMenuId, SessionsMcpToolItemMenuId, SessionsMcpTreeContextMenuId } from './mcpTreeView.js';
 
 //#region Context Keys
 
 export const SessionsMcpIsEmptyContextKey = new RawContextKey<boolean>('sessionsMcp.isEmpty', true);
 export const SessionsMcpServerStateContextKey = new RawContextKey<string>('sessionsMcpServerState', '');
 export const SessionsMcpServerEnabledContextKey = new RawContextKey<boolean>('sessionsMcpServerEnabled', true);
+export const SessionsMcpGroupByContextKey = new RawContextKey<string>('sessionsMcp.groupBy', 'none');
 
 //#endregion
 
@@ -44,6 +46,20 @@ export const SessionsMcpServerEnabledContextKey = new RawContextKey<boolean>('se
 
 const ROOT_ELEMENT = Symbol('mcp-root');
 type RootElement = typeof ROOT_ELEMENT;
+
+export const enum SessionsMcpGroupBy {
+	None = 'none',
+	BuiltIn = 'builtIn',
+	State = 'state',
+	Type = 'type',
+}
+
+interface IMcpGroupTreeItem {
+	readonly type: 'group';
+	readonly id: string;
+	readonly label: string;
+	readonly servers: readonly IMcpServer[];
+}
 
 interface IMcpServerTreeItem {
 	readonly type: 'server';
@@ -58,7 +74,7 @@ interface IMcpToolTreeItem {
 	readonly tool: IMcpTool;
 }
 
-type McpTreeItem = IMcpServerTreeItem | IMcpToolTreeItem;
+type McpTreeItem = IMcpGroupTreeItem | IMcpServerTreeItem | IMcpToolTreeItem;
 
 //#endregion
 
@@ -143,6 +159,7 @@ class McpServerRenderer extends BaseMcpRenderer<IMcpServerTreeItem> {
 			const enabled = isContributionEnabled(item.server.enablement.get());
 
 			templateData.statusDot.className = 'status-dot ' + connectionStateToClass(state);
+			templateData.container.classList.remove('group');
 			templateData.statusDot.title = stateLabel(state, enabled);
 
 			templateData.icon.className = 'icon';
@@ -194,12 +211,35 @@ class McpServerRenderer extends BaseMcpRenderer<IMcpServerTreeItem> {
 	}
 }
 
+class McpGroupRenderer extends BaseMcpRenderer<IMcpGroupTreeItem> {
+	readonly templateId = 'group';
+
+	renderElement(node: ITreeNode<IMcpGroupTreeItem, FuzzyScore>, _index: number, templateData: ITreeItemTemplateData): void {
+		const item = node.element;
+		templateData.elementDisposables.clear();
+		templateData.container.classList.add('group');
+
+		templateData.statusDot.className = 'status-dot';
+		templateData.statusDot.style.visibility = 'hidden';
+
+		templateData.icon.className = 'icon';
+		templateData.icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.folder));
+
+		templateData.name.textContent = item.label;
+		templateData.description.textContent = localize('serverCount', "{0} servers", item.servers.length);
+		templateData.container.title = localize('groupTooltip', "{0}, {1} servers", item.label, item.servers.length);
+
+		templateData.actionBar.clear();
+	}
+}
+
 class McpToolRenderer extends BaseMcpRenderer<IMcpToolTreeItem> {
 	readonly templateId = 'tool';
 
 	renderElement(node: ITreeNode<IMcpToolTreeItem, FuzzyScore>, _index: number, templateData: ITreeItemTemplateData): void {
 		const item = node.element;
 		templateData.elementDisposables.clear();
+		templateData.container.classList.remove('group');
 
 		templateData.statusDot.className = 'status-dot';
 		templateData.statusDot.style.visibility = 'hidden';
@@ -228,12 +268,16 @@ class McpToolRenderer extends BaseMcpRenderer<IMcpToolTreeItem> {
 class McpDataSource implements IAsyncDataSource<RootElement, McpTreeItem> {
 	constructor(
 		private readonly mcpService: IMcpService,
+		private readonly getGroupBy: () => SessionsMcpGroupBy,
 		private readonly onCountChanged: (count: number) => void,
 	) { }
 
 	hasChildren(element: RootElement | McpTreeItem): boolean {
 		if (element === ROOT_ELEMENT) {
 			return true;
+		}
+		if (element.type === 'group') {
+			return element.servers.length > 0;
 		}
 		if (element.type === 'server') {
 			return element.server.tools.get().length > 0;
@@ -246,11 +290,15 @@ class McpDataSource implements IAsyncDataSource<RootElement, McpTreeItem> {
 			const servers = [...this.mcpService.servers.get()]
 				.sort((a, b) => a.definition.label.localeCompare(b.definition.label));
 			this.onCountChanged(servers.length);
-			return servers.map<IMcpServerTreeItem>(server => ({
-				type: 'server',
-				id: `server:${server.definition.id}`,
-				server,
-			}));
+			const groupBy = this.getGroupBy();
+			if (groupBy === SessionsMcpGroupBy.None) {
+				return this.asServerItems(servers);
+			}
+			return this.asGroups(servers, groupBy);
+		}
+
+		if (element.type === 'group') {
+			return this.asServerItems(element.servers);
 		}
 
 		if (element.type === 'server') {
@@ -266,11 +314,43 @@ class McpDataSource implements IAsyncDataSource<RootElement, McpTreeItem> {
 
 		return [];
 	}
+
+	private asServerItems(servers: readonly IMcpServer[]): IMcpServerTreeItem[] {
+		return servers.map<IMcpServerTreeItem>(server => ({
+			type: 'server',
+			id: `server:${server.definition.id}`,
+			server,
+		}));
+	}
+
+	private asGroups(servers: readonly IMcpServer[], groupBy: SessionsMcpGroupBy): IMcpGroupTreeItem[] {
+		const groups = new Map<string, { label: string; servers: IMcpServer[] }>();
+		for (const server of servers) {
+			const group = getServerGroup(server, groupBy);
+			let existing = groups.get(group.id);
+			if (!existing) {
+				existing = { label: group.label, servers: [] };
+				groups.set(group.id, existing);
+			}
+			existing.servers.push(server);
+		}
+
+		return [...groups.entries()]
+			.sort((a, b) => a[1].label.localeCompare(b[1].label))
+			.map(([id, group]) => ({
+				type: 'group',
+				id: `group:${groupBy}:${id}`,
+				label: group.label,
+				servers: group.servers,
+			}));
+	}
 }
 
 //#endregion
 
 //#region View pane
+
+const MCP_GROUP_BY_STORAGE_KEY = 'sessions.mcp.groupBy';
 
 export class SessionsMcpViewPane extends ViewPane {
 
@@ -282,6 +362,8 @@ export class SessionsMcpViewPane extends ViewPane {
 	private readonly isEmptyContextKey: IContextKey<boolean>;
 	private readonly serverStateContextKey: IContextKey<string>;
 	private readonly serverEnabledContextKey: IContextKey<boolean>;
+	private readonly groupByContextKey: IContextKey<string>;
+	private groupBy: SessionsMcpGroupBy;
 
 	private readonly refreshScheduler = this._register(new RunOnceScheduler(() => this.doRefresh(), 100));
 
@@ -298,12 +380,16 @@ export class SessionsMcpViewPane extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 		@IMcpService private readonly mcpService: IMcpService,
 		@IMenuService private readonly menuService: IMenuService,
+		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
 		this.isEmptyContextKey = SessionsMcpIsEmptyContextKey.bindTo(contextKeyService);
 		this.serverStateContextKey = SessionsMcpServerStateContextKey.bindTo(contextKeyService);
 		this.serverEnabledContextKey = SessionsMcpServerEnabledContextKey.bindTo(contextKeyService);
+		this.groupByContextKey = SessionsMcpGroupByContextKey.bindTo(contextKeyService);
+		this.groupBy = parseGroupBy(this.storageService.get(MCP_GROUP_BY_STORAGE_KEY, StorageScope.PROFILE, SessionsMcpGroupBy.None));
+		this.groupByContextKey.set(this.groupBy);
 
 		// Auto-refresh tree shape when the set of servers, their tools, or
 		// their connection states change. Throttle to avoid thrashing.
@@ -313,6 +399,7 @@ export class SessionsMcpViewPane extends ViewPane {
 				server.connectionState.read(reader);
 				server.tools.read(reader);
 				server.enablement.read(reader);
+				server.readDefinitions().read(reader);
 			}
 			this.refreshScheduler.schedule();
 		}));
@@ -334,6 +421,7 @@ export class SessionsMcpViewPane extends ViewPane {
 
 		this.dataSource = new McpDataSource(
 			this.mcpService,
+			() => this.groupBy,
 			count => this.isEmptyContextKey.set(count === 0),
 		);
 
@@ -343,6 +431,7 @@ export class SessionsMcpViewPane extends ViewPane {
 			this.treeContainer,
 			new McpTreeDelegate(),
 			[
+				this.instantiationService.createInstance(McpGroupRenderer),
 				this.instantiationService.createInstance(McpServerRenderer),
 				this.instantiationService.createInstance(McpToolRenderer),
 			],
@@ -353,6 +442,9 @@ export class SessionsMcpViewPane extends ViewPane {
 				},
 				accessibilityProvider: {
 					getAriaLabel: (element: McpTreeItem) => {
+						if (element.type === 'group') {
+							return localize('groupAria', "{0}, group, {1} servers", element.label, element.servers.length);
+						}
 						if (element.type === 'server') {
 							const state = element.server.connectionState.get().state;
 							return localize('serverAria', "{0}, MCP server, {1}", element.server.definition.label, stateLabel(state, isContributionEnabled(element.server.enablement.get())));
@@ -363,6 +455,9 @@ export class SessionsMcpViewPane extends ViewPane {
 				},
 				keyboardNavigationLabelProvider: {
 					getKeyboardNavigationLabel: (element: McpTreeItem) => {
+						if (element.type === 'group') {
+							return element.label;
+						}
 						return element.type === 'server' ? element.server.definition.label : element.tool.definition.name;
 					},
 				},
@@ -391,6 +486,20 @@ export class SessionsMcpViewPane extends ViewPane {
 		this.doRefresh();
 	}
 
+	public setGroupBy(groupBy: SessionsMcpGroupBy): void {
+		if (this.groupBy === groupBy) {
+			return;
+		}
+		this.groupBy = groupBy;
+		this.groupByContextKey.set(groupBy);
+		if (groupBy === SessionsMcpGroupBy.None) {
+			this.storageService.remove(MCP_GROUP_BY_STORAGE_KEY, StorageScope.PROFILE);
+		} else {
+			this.storageService.store(MCP_GROUP_BY_STORAGE_KEY, groupBy, StorageScope.PROFILE, StorageTarget.USER);
+		}
+		this.doRefresh();
+	}
+
 	protected override layoutBody(height: number, width: number): void {
 		super.layoutBody(height, width);
 		this.tree?.layout(height, width);
@@ -398,6 +507,12 @@ export class SessionsMcpViewPane extends ViewPane {
 
 	private onContextMenu(e: ITreeContextMenuEvent<McpTreeItem | null>): void {
 		if (!e.element) {
+			this.showTreeContextMenu(e.anchor);
+			return;
+		}
+
+		if (e.element.type === 'group') {
+			this.showTreeContextMenu(e.anchor);
 			return;
 		}
 
@@ -427,6 +542,10 @@ export class SessionsMcpViewPane extends ViewPane {
 			return;
 		}
 
+		if (e.element.type !== 'tool') {
+			return;
+		}
+
 		// Tool item: simple menu (no actions yet, but keep extensible).
 		const context = { serverId: e.element.server.definition.id, toolId: e.element.tool.id };
 		const menu = this.menuService.getMenuActions(SessionsMcpToolItemMenuId, this.contextKeyService, { arg: context, shouldForwardArgs: true });
@@ -436,6 +555,17 @@ export class SessionsMcpViewPane extends ViewPane {
 				getAnchor: () => e.anchor,
 				getActions: () => secondary,
 				getActionsContext: () => context,
+			});
+		}
+	}
+
+	private showTreeContextMenu(anchor: ITreeContextMenuEvent<McpTreeItem | null>['anchor']): void {
+		const menu = this.menuService.getMenuActions(SessionsMcpTreeContextMenuId, this.contextKeyService, { shouldForwardArgs: true });
+		const { secondary } = getContextMenuActions(menu, 'inline');
+		if (secondary.length > 0) {
+			this.contextMenuService.showContextMenu({
+				getAnchor: () => anchor,
+				getActions: () => secondary,
 			});
 		}
 	}
@@ -478,6 +608,44 @@ function stateLabel(state: McpConnectionState.Kind, enabled: boolean): string {
 		case McpConnectionState.Kind.Stopped:
 		default: return localize('mcpStateStopped', "Stopped");
 	}
+}
+
+function parseGroupBy(value: string): SessionsMcpGroupBy {
+	switch (value) {
+		case SessionsMcpGroupBy.BuiltIn:
+			return SessionsMcpGroupBy.BuiltIn;
+		case SessionsMcpGroupBy.State:
+			return SessionsMcpGroupBy.State;
+		case SessionsMcpGroupBy.Type:
+			return SessionsMcpGroupBy.Type;
+		case SessionsMcpGroupBy.None:
+		default:
+			return SessionsMcpGroupBy.None;
+	}
+}
+
+function getServerGroup(server: IMcpServer, groupBy: SessionsMcpGroupBy): { id: string; label: string } {
+	const definitions = server.readDefinitions().get();
+	switch (groupBy) {
+		case SessionsMcpGroupBy.BuiltIn:
+			if (definitions.collection?.source) {
+				return { id: 'builtIn', label: localize('groupBuiltIn', "Built In") };
+			}
+			return { id: 'configured', label: localize('groupConfigured', "Configured") };
+		case SessionsMcpGroupBy.State: {
+			const state = server.connectionState.get().state;
+			return { id: state.toString(), label: stateLabel(state, isContributionEnabled(server.enablement.get())) };
+		}
+		case SessionsMcpGroupBy.Type:
+			switch (definitions.server?.launch.type) {
+				case McpServerTransportType.HTTP:
+					return { id: 'http', label: localize('groupHttp', "HTTP") };
+				case McpServerTransportType.Stdio:
+					return { id: 'stdio', label: localize('groupStdio', "Stdio") };
+			}
+			return { id: 'unknownType', label: localize('groupUnknownType', "Unknown") };
+	}
+	return { id: 'all', label: localize('groupAll', "All") };
 }
 
 //#endregion
