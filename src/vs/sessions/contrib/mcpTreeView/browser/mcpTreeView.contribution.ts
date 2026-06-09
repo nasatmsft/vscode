@@ -26,6 +26,7 @@ import { ISessionsMcpUserIntentService } from '../common/mcpUserIntentService.js
 import { SESSIONS_MCP_CATEGORY, SESSIONS_MCP_CONTAINER_ID, SESSIONS_MCP_VIEW_ID, SessionsMcpGroupByMenuId, SessionsMcpServerItemMenuId, SessionsMcpToolItemMenuId, SessionsMcpTreeContextMenuId } from './mcpTreeView.js';
 import { SessionsMcpGroupBy, SessionsMcpGroupByContextKey, SessionsMcpServerEnabledContextKey, SessionsMcpServerStateContextKey, SessionsMcpViewPane } from './mcpTreeViewPane.js';
 import { IViewsService } from '../../../../workbench/services/views/common/viewsService.js';
+import './mcpDiagnostics.js';
 
 const mcpViewIcon = registerIcon('sessions-mcp-view-icon', Codicon.server, localize2('sessionsMcpViewIcon', 'View icon for the MCP Servers view in the Agents Window.').value);
 
